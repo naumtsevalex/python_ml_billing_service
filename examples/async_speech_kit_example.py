@@ -21,8 +21,10 @@ class YandexSpeechService(BaseSpeechService):
     STT_URL = "https://stt.api.cloud.yandex.net/speech/v1/stt:recognize"
 
     def __init__(self):
-        self.folder_id = os.environ['FOLDER_ID']
-        self.iam_token = os.environ['IAM_TOKEN']
+        self.folder_id = os.environ.get('FOLDER_ID')
+        self.iam_token = os.environ.get('IAM_TOKEN')
+        if not self.folder_id or not self.iam_token:
+            raise ValueError("FOLDER_ID and IAM_TOKEN must be set in environment variables")
         AUDIO_DIR.mkdir(parents=True, exist_ok=True)
         self._session: Optional[aiohttp.ClientSession] = None
 

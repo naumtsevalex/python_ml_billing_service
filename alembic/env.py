@@ -1,4 +1,5 @@
 from logging.config import fileConfig
+import os
 
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
@@ -43,7 +44,10 @@ def run_migrations_offline() -> None:
     script output.
 
     """
-    url = config.get_main_option("sqlalchemy.url")
+    url = os.environ.get("ALEMBIC_DATABASE_URL")
+    if not url:
+        raise ValueError("ALEMBIC_DATABASE_URL environment variable is not set")
+    
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -62,8 +66,15 @@ def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
+    url = os.environ.get("ALEMBIC_DATABASE_URL")
+    if not url:
+        raise ValueError("ALEMBIC_DATABASE_URL environment variable is not set")
+    
+    configuration = config.get_section(config.config_ini_section)
+    configuration["sqlalchemy.url"] = url
+    
     connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
+        configuration,
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
