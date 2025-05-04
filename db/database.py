@@ -7,6 +7,7 @@ from sqlalchemy.orm import sessionmaker
 from models.user import User
 from models.balance import Balance
 from models.log import Log
+from models.task import Task
 
 class Database:
     _instance = None
@@ -103,6 +104,80 @@ class Database:
             select(Log)
             .where(Log.user_id == user_id)
             .order_by(Log.created_at.desc())
+            .limit(limit)
+        )
+        return result.scalars().all()
+
+    async def create_task(self, task_id: str, user_id: int, task_type: str, payload: str) -> Task:
+        """Создать новую задачу"""
+        await self.initialize()
+        try:
+            async with self.session as session:
+                task = Task(
+                    id=task_id,
+                    user_id=user_id,
+                    type=task_type,
+                    payload=payload,
+                    status="created"
+                )
+                session.add(task)
+                await self.log(user_id, "TASK_CREATED", f"Creating task {task_id} of type {task_type}", print_log=True)
+                await session.commit()
+                await self.log(user_id, "TASK_CREATED_SUCCESS", f"Task {task_id} created successfully", print_log=True)
+                return task
+        except Exception as e:
+            import traceback
+            error_msg = f"Error creating task: {str(e)}\n{traceback.format_exc()}"
+            print(f"[ERROR] Database.create_task error:\n{error_msg}")
+            await self.log(user_id, "TASK_CREATED_ERROR", error_msg, print_log=True)
+            raise
+
+    async def update_task(self, task_id: str, status: str, result: str | None = None, cost: int | None = None) -> Task | None:
+        """Обновить статус задачи"""
+        await self.initialize()
+        try:
+            query_result = await self.session.execute(
+                select(Task).where(Task.id == task_id)
+            )
+            task = query_result.scalar_one_or_none()
+            if task:
+                task.status = status
+                if result is not None:
+                    task.result = result
+                if cost is not None:
+                    task.cost = cost
+                if status in ["completed", "error"]:
+                    task.finished_at = datetime.utcnow()
+                await self.log(task.user_id, "TASK_UPDATED", f"Updating task {task_id} to status {status}", print_log=True)
+                await self.session.commit()
+                await self.log(task.user_id, "TASK_UPDATED_SUCCESS", f"Task {task_id} updated successfully", print_log=True)
+            else:
+                error_msg = f"Task {task_id} not found"
+                print(f"[ERROR] Database.update_task error: {error_msg}")
+                await self.log(None, "TASK_UPDATE_ERROR", error_msg, print_log=True)
+            return task
+        except Exception as e:
+            import traceback
+            error_msg = f"Error updating task {task_id}: {str(e)}\n{traceback.format_exc()}"
+            print(f"[ERROR] Database.update_task error:\n{error_msg}")
+            await self.log(None, "TASK_UPDATE_ERROR", error_msg, print_log=True)
+            raise
+
+    async def get_task(self, task_id: str) -> Task | None:
+        """Получить задачу по ID"""
+        await self.initialize()
+        result = await self.session.execute(
+            select(Task).where(Task.id == task_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def get_user_tasks(self, user_id: int, limit: int = 10) -> list[Task]:
+        """Получить последние задачи пользователя"""
+        await self.initialize()
+        result = await self.session.execute(
+            select(Task)
+            .where(Task.user_id == user_id)
+            .order_by(Task.created_at.desc())
             .limit(limit)
         )
         return result.scalars().all() 
