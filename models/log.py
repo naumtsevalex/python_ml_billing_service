@@ -1,6 +1,7 @@
 from sqlalchemy import Integer, String, DateTime, ForeignKey, BigInteger
 from sqlalchemy.orm import Mapped, mapped_column
 from datetime import datetime
+from typing import Optional
 from .base import Base
 
 class Log(Base):

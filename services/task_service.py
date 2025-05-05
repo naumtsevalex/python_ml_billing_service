@@ -15,6 +15,15 @@ class TaskService:
         file_path = task["file_path"]
         task_id = task["task_id"]
         
+        # Проверяем существование пользователя
+        await self.db.log(user_id, "TASK_DEBUG", f"Checking if user exists for task_id: {task_id}", print_log=True)
+        user = await self.db.get_user(user_id)
+        if not user:
+            error_msg = f"User {user_id} not found"
+            print(f"[ERROR] {error_msg}")
+            await self.db.update_task(task_id, "error", error_msg)
+            raise ValueError(error_msg)
+        
         # Создаем запись о задаче в БД
         await self.db.log(user_id, "TASK_DEBUG", f"Creating task record in DB for task_id: {task_id}", print_log=True)
         await self.db.create_task(
@@ -79,7 +88,7 @@ class TaskService:
                 "result_file": result_file,
                 "cost": cost
             }
-        else:
+        elif task_type == "text":
             # Получаем текстовый файл
             await self.db.log(user_id, "TASK_DEBUG", f"Getting text file for task_id: {task_id}", print_log=True)
             text_content = await self.file_manager.get_text(file_path)
@@ -131,6 +140,11 @@ class TaskService:
                 "result_file": result_file,
                 "cost": cost
             }
+        else:
+            error_msg = f"Unknown task type: {task_type}"
+            print(f"[ERROR] {error_msg}")
+            await self.db.update_task(task_id, "error", error_msg)
+            raise ValueError(error_msg)
         
         await self.db.log(user_id, "TASK_COMPLETED", f"Task {task_type} completed successfully with task_id: {task_id}", print_log=True)
         return result 

@@ -22,8 +22,12 @@ class YandexSpeechService(BaseSpeechService):
     def __init__(self):
         self.folder_id = os.environ.get('FOLDER_ID')
         self.iam_token = os.environ.get('IAM_TOKEN')
-        if not self.folder_id or not self.iam_token:
-            raise ValueError("FOLDER_ID и IAM_TOKEN должны быть заданы в переменных окружения")
+        self.oauth_token = os.environ.get('OAUTH_TOKEN')
+        
+        if not self.folder_id:
+            raise ValueError("FOLDER_ID должен быть задан в переменных окружения")
+        if not self.iam_token and not self.oauth_token:
+            raise ValueError("IAM_TOKEN или OAUTH_TOKEN должны быть заданы в переменных окружения")
 
     async def text_to_speech(self, text: str, output_file: str = "output.ogg", voice: str = "alena", lang: str = "ru-RU") -> Path:
         headers = {"Authorization": f"Bearer {self.iam_token}"}
@@ -42,20 +46,21 @@ class YandexSpeechService(BaseSpeechService):
                 output_path.write_bytes(await response.read())
                 return output_path
 
-    async def speech_to_text(self, audio_path: Path, lang: str = "ru-RU") -> str:
-        headers = {"Authorization": f"Bearer {self.iam_token}"}
-        data = {
-            "lang": lang,
-            "folderId": self.folder_id
+    async def speech_to_text(self, audio_data: bytes) -> str:
+        """Преобразование аудио в текст"""
+        headers = {
+            "Authorization": f"Api-Key {self.iam_token}",
+            "Content-Type": "audio/ogg"
         }
-        with audio_path.open("rb") as f:
-            audio_data = f.read()
+        
         async with aiohttp.ClientSession() as session:
-            async with session.post(self.STT_URL, headers=headers, data=data, data=audio_data) as response:
-                if response.status != 200:
-                    raise RuntimeError(f"STT request failed: {await response.text()}")
-                result = await response.json()
-                return result.get("result", "")
+            async with session.post(self.STT_URL, headers=headers, data=audio_data) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    return result["result"]
+                else:
+                    error_text = await response.text()
+                    raise Exception(f"STT error: {error_text}")
 
 # Пример использования
 if __name__ == "__main__":

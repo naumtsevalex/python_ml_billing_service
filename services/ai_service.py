@@ -29,19 +29,10 @@ class AIService:
         # Преобразуем Path в строку
         return str(result_path)
 
-    async def speech_to_text(self, audio_content: bytes, user_id: int, task_id: str) -> str:
+    async def speech_to_text(self, audio_content: bytes) -> str:
         """Преобразование речи в текст"""
-        # Сохраняем аудио через FileManager с пометкой in
-        audio_path = await self.file_manager.save_audio(
-            audio_content,
-            user_id,
-            task_id,
-            direction="in"  # Входящий файл - от пользователя
-        )
-        
         # Используем существующий сервис для распознавания
-        text = await self.speech_service.speech_to_text(audio_path)
-        
+        text = await self.speech_service.speech_to_text(audio_content)
         return text
 
     def calculate_cost(self, content: Union[str, bytes], operation: str) -> int:
@@ -51,5 +42,7 @@ class AIService:
             return len(content) * 0.1  # 0.1 кредита за символ
         else:  # stt
             # Стоимость за секунду аудио (примерно)
-            audio_length = len(content) / 16000  # Примерная длина в секундах
+            # Предполагаем, что аудио в формате 16kHz, 16-bit mono
+            # Размер в байтах / (16000 * 2) = количество секунд
+            audio_length = len(content) / (16000 * 2)
             return int(audio_length * 0.5)  # 0.5 кредита за секунду 

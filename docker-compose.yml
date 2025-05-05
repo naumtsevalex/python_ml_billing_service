@@ -38,6 +38,9 @@ services:
       - DATABASE_URL=${DATABASE_URL}
       - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
       - RABBITMQ_URL=${RABBITMQ_URL}
+      - FOLDER_ID=${FOLDER_ID}
+      - IAM_TOKEN=${IAM_TOKEN}
+      - OAUTH_TOKEN=${OAUTH_TOKEN}
     volumes:
       - ./data:/app/data
     depends_on:
@@ -52,6 +55,9 @@ services:
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - RABBITMQ_URL=${RABBITMQ_URL}
+      - FOLDER_ID=${FOLDER_ID}
+      - IAM_TOKEN=${IAM_TOKEN}
+      - OAUTH_TOKEN=${OAUTH_TOKEN}
     volumes:
       - ./data:/app/data
     depends_on:

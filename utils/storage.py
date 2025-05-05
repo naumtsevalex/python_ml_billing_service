@@ -64,23 +64,14 @@ class StorageInterface(ABC):
         user_id: int,
         task_id: str,
         ext: str,
-        subdir: Optional[str] = None,
-        direction: str = "out"  # "in" или "out"
+        subdir: str = "text",
+        direction: str = "in"
     ) -> str:
-        """
-        Получает полный путь к файлу без его создания
-        
-        Args:
-            user_id: ID пользователя
-            task_id: ID задачи
-            ext: Расширение файла (без точки)
-            subdir: Поддиректория (например, 'audio' или 'text')
-            direction: Направление файла ("in" - от пользователя, "out" - к пользователю)
-            
-        Returns:
-            str: Путь к файлу
-        """
-        pass
+        """Получить путь к файлу"""
+        # Используем абсолютный путь в контейнере
+        base_path = Path("/app/data")
+        filepath = base_path / subdir / f"{direction}_{user_id}_{task_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.{ext}"
+        return str(filepath)
 
 
 class LocalStorage(StorageInterface):
@@ -108,7 +99,7 @@ class LocalStorage(StorageInterface):
     ) -> str:
         """Получает полный путь к файлу без его создания"""
         # Формируем путь
-        base_dir = self.base_dir
+        base_dir = Path("/app") / self.base_dir
         if subdir:
             base_dir = base_dir / subdir
         
@@ -119,7 +110,7 @@ class LocalStorage(StorageInterface):
         filename = self._generate_filename(user_id, task_id, ext, direction)
         filepath = base_dir / filename
         
-        return str(filepath.relative_to(Path.cwd()))
+        return str(filepath)
     
     def save_file(
         self,

@@ -3,6 +3,9 @@ from sqlalchemy.orm import Mapped, mapped_column
 from datetime import datetime
 from .base import Base
 
+# ID системного пользователя для системных логов
+SYSTEM_USER_ID = -1
+
 class User(Base):
     __tablename__ = "users"
 

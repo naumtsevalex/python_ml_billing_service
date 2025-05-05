@@ -1,125 +1,153 @@
 import os
 import json
 import uuid
+import sys
 import aio_pika
 from aiogram import Bot
 from db.database import Database
+from models.task import Task
 from utils.file_utils import FileManager
+import asyncio
+
+# Настраиваем буферизацию вывода
+sys.stdout.reconfigure(line_buffering=True)
+
+def log_debug(message: str):
+    """Функция для отладочного логирования"""
+    print(f"[DEBUG] {message}", flush=True)
+    sys.stdout.flush()
 
 class MessageService:
     def __init__(self, bot: Bot):
         self.bot = bot
         self.db = Database()
         self.file_manager = FileManager()
+        self._connection = None
 
-    async def register_user(self, telegram_id: int, username: str) -> None:
-        """Регистрация пользователя"""
-        await self.db.register_user(telegram_id, username)
-
-    async def process_message(self, user_id: int, message_id: int, text: str = None, voice_file_id: str = None) -> tuple[str, str, str]:
-        """Обработка входящего сообщения"""
-        # Проверяем баланс
-        balance = await self.db.get_balance(user_id)
-        if balance <= 0:
-            raise ValueError("Insufficient balance")
-
-        # Сохраняем сообщение в файл
-        if voice_file_id:
-            # Получаем файл голосового сообщения
-            voice_file = await self.bot.get_file(voice_file_id)
-            voice_bytes = await self.bot.download_file(voice_file.file_path)
-            
-            # Сохраняем аудио файл
-            file_path = await self.file_manager.save_audio(
-                voice_bytes,
-                user_id,
-                f"voice_{message_id}",
-                direction="in"
-            )
-            await self.db.log(user_id, "FILE_SAVED", f"Saved voice message to {file_path}", print_log=True)
-            
-            return "voice", file_path, file_path
-            
-        else:
-            # Сохраняем текстовое сообщение
-            file_path = await self.file_manager.save_text(
-                text,
-                user_id,
-                f"text_{message_id}",
-                direction="in"
-            )
-            await self.db.log(user_id, "FILE_SAVED", f"Saved text message to {file_path}", print_log=True)
-            
-            return "text", text, file_path
-
-    async def send_task_to_worker(self, user_id: int, task_type: str, task_data: str, file_path: str) -> dict:
-        """Отправка задачи воркеру"""
-        # Подключаемся к RabbitMQ
-        await self.db.log(user_id, "RABBITMQ_CONNECTING", f"Connecting to RabbitMQ at {os.environ['RABBITMQ_URL']}", print_log=True)
-        connection = await aio_pika.connect_robust(os.environ["RABBITMQ_URL"])
-        await self.db.log(user_id, "RABBITMQ_CONNECTED", "Successfully connected to RabbitMQ", print_log=True)
-        
+    async def _get_connection(self):
+        """Получение или создание подключения к RabbitMQ"""
         try:
-            # Создаем канал
-            channel = await connection.channel()
-            await self.db.log(user_id, "RABBITMQ_CHANNEL", "Created RabbitMQ channel", print_log=True)
+            if self._connection is None or self._connection.is_closed:
+                self._connection = await aio_pika.connect_robust(
+                    os.environ["RABBITMQ_URL"],
+                    timeout=30  # 30 секунд таймаут на подключение
+                )
+            return self._connection
+        except Exception as e:
+            print(f"[ERROR] Failed to connect to RabbitMQ: {str(e)}")
+            raise
+
+    async def process_message(self, user_id: int, message_id: int, text: str | None = None, voice_file_id: str | None = None) -> dict:
+        """Обработка входящего сообщения"""
+        try:
+            # Получаем или создаем пользователя
+            user = await self.db.get_user(user_id)
+            if not user:
+                user = await self.db.create_user(user_id, "user")
             
-            # Генерируем уникальный task_id
-            task_id = str(uuid.uuid4())
+            # Генерируем ID задачи
+            task_id = f"{user_id}_{message_id}"
             
-            # Формируем задачу
-            task = {
-                "user_id": user_id,
-                "type": task_type,
-                "task_id": task_id,  # Отдельное поле для task_id
-                "data": task_data,   # Оригинальные данные
-                "file_path": file_path
+            # Определяем тип задачи и создаем её
+            if text:
+                task_type = "TTS"
+                payload = text
+            elif voice_file_id:
+                task_type = "STT"
+                payload = voice_file_id
+            else:
+                raise ValueError("Neither text nor voice_file_id provided")
+            
+            # Создаем задачу
+            task = await self.db.create_task(task_id, user_id, task_type, payload)
+            
+            # Отправляем задачу в очередь
+            await self.send_task_to_worker(task)
+            
+            return {
+                "status": "success",
+                "task_id": task_id,
+                "type": task_type
             }
             
-            # Создаем очередь для ответа
-            reply_queue = await channel.declare_queue(exclusive=True)
-            await self.db.log(user_id, "RABBITMQ_REPLY_QUEUE", f"Created reply queue: {reply_queue.name}", print_log=True)
+        except Exception as e:
+            await self.db.log(user_id, "MESSAGE_PROCESSING_ERROR", f"e={str(e)}", print_log=True)
+            raise
+
+    async def send_task_to_worker(self, task: Task) -> dict:
+        """Отправка задачи воркеру"""
+        channel = None
+        try:
+            connection = await self._get_connection()
+            channel = await connection.channel()
+            
+            # Генерируем correlation_id
+            correlation_id = str(uuid.uuid4())
+            
+            # Формируем задачу
+            task_data = {
+                "user_id": task.user_id,
+                "type": task.type,
+                "task_id": task.id,
+                "data": task.payload,
+                "correlation_id": correlation_id,
+                "file_path": None
+            }
+            
+            # Объявляем обе очереди
+            tasks_queue = await channel.declare_queue("tasks")
+            results_queue = await channel.declare_queue("results")
             
             # Отправляем задачу
             await channel.default_exchange.publish(
                 aio_pika.Message(
-                    body=json.dumps(task).encode(),
-                    reply_to=reply_queue.name
+                    body=json.dumps(task_data).encode(),
+                    correlation_id=correlation_id
                 ),
                 routing_key="tasks"
             )
             
-            await self.db.log(user_id, "TASK_SENT", f"Task sent to worker: {task['type']}", print_log=True)
-            
-            # Ждем ответ
-            async with reply_queue.iterator() as queue_iter:
-                await self.db.log(user_id, "WAITING_REPLY", "Waiting for worker reply", print_log=True)
-                async for message in queue_iter:
-                    async with message.process():
-                        result = json.loads(message.body.decode())
-                        return result
+            # Ждем ответ в очереди results с таймаутом
+            try:
+                async with asyncio.timeout(30):  # 30 секунд таймаут на ответ
+                    async with results_queue.iterator() as queue_iter:
+                        async for message in queue_iter:
+                            if message.correlation_id == correlation_id:
+                                async with message.process():
+                                    result = json.loads(message.body.decode())
+                                    return result
+            except asyncio.TimeoutError:
+                raise TimeoutError("Worker response timeout")
 
+        except Exception as e:
+            await self.db.log(task.user_id, "RABBITMQ_ERROR", f"e={str(e)}", print_log=True)
+            raise
         finally:
-            await connection.close()
-            await self.db.log(user_id, "RABBITMQ_DISCONNECTED", "Disconnected from RabbitMQ", print_log=True)
+            # Закрываем канал если он был создан
+            if channel and not channel.is_closed:
+                try:
+                    await channel.close()
+                except Exception as e:
+                    print(f"[ERROR] Failed to close channel: {str(e)}")
 
     async def send_result_to_user(self, user_id: int, result: dict) -> None:
         """Отправка результата пользователю"""
-        if result["status"] == "success":
-            await self.db.log(user_id, "TASK_RESULT", f"Task completed: {result['message']}", print_log=True)
-            
-            # Если есть файл с результатом и это был текст -> аудио (TTS)
-            if "result_file" in result and result["type"] == "text":
-                # Получаем содержимое аудио файла
-                audio_content = await self.file_manager.get_audio(result["result_file"])
-                # Отправляем аудио
-                await self.bot.send_voice(user_id, audio_content)
-                await self.bot.send_message(user_id, result["message"])
-            # Если это был голос -> текст (STT)
-            elif result["type"] == "voice":
-                await self.bot.send_message(user_id, result["message"])
+        try:
+            if result["status"] == "success":
+                # Если есть файл с результатом и это был текст -> аудио (TTS)
+                if "result_file" in result and result["type"] == "text":
+                    # Получаем содержимое аудио файла
+                    audio_content = await self.file_manager.get_audio(result["result_file"])
+                    # Отправляем аудио
+                    await self.bot.send_voice(user_id, audio_content)
+                    await self.bot.send_message(user_id, result["message"])
+                # Если это был голос -> текст (STT)
+                elif result["type"] == "voice":
+                    await self.bot.send_message(user_id, result["message"])
+                else:
+                    await self.bot.send_message(user_id, result["message"])
             else:
-                await self.bot.send_message(user_id, result["message"])
-        else:
-            await self.db.log(user_id, "TASK_ERROR", f"Task failed: {result.get('error', 'Unknown error')}", print_log=True)
-            await self.bot.send_message(user_id, "Произошла ошибка при обработке задачи.") 
+                await self.bot.send_message(user_id, "Произошла ошибка при обработке задачи.")
+        except Exception as e:
+            await self.db.log(user_id, "SEND_RESULT_ERROR", f"e={str(e)}", print_log=True)
+            raise 
