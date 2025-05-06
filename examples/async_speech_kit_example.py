@@ -98,7 +98,7 @@ async def main():
     async with YandexSpeechService() as speech_service:
         try:
             output_path = await speech_service.text_to_speech(
-                "Привет! Это тестовое сообщение для проверки работы Yandex SpeechKit.",
+                "Я устал....... Привет! Это тестовое сообщение для проверки работы Yandex SpeechKit.",
                 "test_tts.ogg"
             )
             print(f"TTS completed, file saved to: {output_path}")

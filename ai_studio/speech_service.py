@@ -23,6 +23,8 @@ class YandexSpeechService(BaseSpeechService):
         self.folder_id = os.environ.get('FOLDER_ID')
         self.iam_token = os.environ.get('IAM_TOKEN')
         self.oauth_token = os.environ.get('OAUTH_TOKEN')
+
+        print(f"YandexSpeechService:__init__: \n{self.folder_id=}\n{self.iam_token=}\n{self.oauth_token=}\n\n")
         
         if not self.folder_id:
             raise ValueError("FOLDER_ID должен быть задан в переменных окружения")
@@ -49,15 +51,19 @@ class YandexSpeechService(BaseSpeechService):
     async def speech_to_text(self, audio_data: bytes) -> str:
         """Преобразование аудио в текст"""
         headers = {
-            "Authorization": f"Api-Key {self.iam_token}",
-            "Content-Type": "audio/ogg"
+            "Authorization": f"Bearer {self.iam_token}",
+        }
+        
+        params = {
+            "lang": "ru-RU",
+            "folderId": self.folder_id
         }
         
         async with aiohttp.ClientSession() as session:
-            async with session.post(self.STT_URL, headers=headers, data=audio_data) as response:
+            async with session.post(self.STT_URL, headers=headers, params=params, data=audio_data) as response:
                 if response.status == 200:
                     result = await response.json()
-                    return result["result"]
+                    return result.get("result", "")
                 else:
                     error_text = await response.text()
                     raise Exception(f"STT error: {error_text}")

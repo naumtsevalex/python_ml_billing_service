@@ -34,15 +34,13 @@ services:
   bot:
     build: .
     command: python bot/bot.py
+    # command: python bot/echo_bot.py
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
       - RABBITMQ_URL=${RABBITMQ_URL}
-      - FOLDER_ID=${FOLDER_ID}
-      - IAM_TOKEN=${IAM_TOKEN}
-      - OAUTH_TOKEN=${OAUTH_TOKEN}
     volumes:
-      - ./data:/app/data
+      - .:/app
     depends_on:
       postgres:
         condition: service_healthy
@@ -59,7 +57,7 @@ services:
       - IAM_TOKEN=${IAM_TOKEN}
       - OAUTH_TOKEN=${OAUTH_TOKEN}
     volumes:
-      - ./data:/app/data
+      - .:/app
     depends_on:
       postgres:
         condition: service_healthy
