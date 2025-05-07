@@ -1,11 +1,8 @@
-import os
-import json
-import aiohttp
-import uuid
 from typing import Union, Tuple
 from ai_studio.speech_service import YandexSpeechService
 from utils.file_utils import FileManager
 from utils.storage import LocalStorage
+
 
 class AIService:
     def __init__(self):
