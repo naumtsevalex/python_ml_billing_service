@@ -36,10 +36,7 @@ class MessageService:
 
     async def process_message(self, user_id: int, message_id: int, text: str | None = None, voice_file_id: str | None = None) -> dict:
         """Обработка входящего сообщения"""
-        # Получаем или создаем пользователя
-        user = await self.db.get_user(user_id)
-        if not user:
-            user = await self.db.create_user(user_id, "user")
+        # Пользователь уже создан через middleware, нет необходимости проверять
         
         # Генерируем ID задачи
         task_id = f"{user_id}_{message_id}"

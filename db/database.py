@@ -44,11 +44,11 @@ class Database:
             )
             return result.scalar_one_or_none()
 
-    async def create_user(self, telegram_id: int, username: str) -> User:
+    async def create_user(self, telegram_id: int, username: str, role: UserRole = UserRole.CHILL_BOY) -> User:
         """Создать нового пользователя"""
         async with await self.get_session() as session:
             # Создаем пользователя
-            user = User(telegram_id=telegram_id, username=username)
+            user = User(telegram_id=telegram_id, username=username, role=role)
             session.add(user)
             await session.flush()
             
@@ -71,6 +71,19 @@ class Database:
                 session.add(balance)
                 await session.commit()
             return balance.balance
+
+    async def get_balance_object(self, user_id: int) -> Balance:
+        """Получить объект баланса пользователя"""
+        async with await self.get_session() as session:
+            result = await session.execute(
+                select(Balance).where(Balance.user_id == user_id)
+            )
+            balance = result.scalar_one_or_none()
+            if not balance:
+                balance = Balance(user_id=user_id, balance=10)
+                session.add(balance)
+                await session.commit()
+            return balance
 
     async def update_balance(self, user_id: int, amount: int) -> None:
         """Обновить баланс пользователя"""
@@ -157,4 +170,17 @@ class Database:
             result = await session.execute(
                 select(User).where(User.role == role)
             )
-            return list(result.scalars().all()) 
+            return list(result.scalars().all())
+    
+
+    async def ensure_system_user_exists(self) -> User:
+        """Проверяет наличие системного пользователя и создает его при необходимости"""
+        system_user = await self.get_user(SYSTEM_USER_ID)
+        if not system_user:
+            system_user = await self.create_user(
+                telegram_id=SYSTEM_USER_ID, 
+                username="system", 
+                role=UserRole.SYSTEM
+            )
+            await self.log(SYSTEM_USER_ID, "SYSTEM_USER_CREATED", "Системный пользователь создан", print_log=True)
+        return system_user 

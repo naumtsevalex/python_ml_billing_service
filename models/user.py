@@ -12,6 +12,7 @@ class UserRole(str, Enum):
     ADMIN = "ADMIN"  # Администратор системы
     CHILL_BOY = "CHILL_BOY"  # Обычный пользователь
     BANNED = "BANNED"  # Заблокированный пользователь
+    SYSTEM = "SYSTEM"  # Системный пользователь для логов и автоматических действий
 
 class User(Base):
     __tablename__ = "users"
