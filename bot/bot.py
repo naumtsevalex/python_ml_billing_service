@@ -3,13 +3,14 @@ import logging
 import asyncio
 import sys
 from typing import Any
+from datetime import datetime
 
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart
 
 from db.database import Database
 from services.message_service import MessageService
-from models.user import SYSTEM_USER_ID
+from models.user import SYSTEM_USER_ID, UserRole
 
 # Настройка логирования
 logging.basicConfig(
@@ -75,7 +76,17 @@ async def main() -> None:
     logger.info("Starting bot...")
     
     # Регистрируем старт в базе
-    # await db.log(SYSTEM_USER_ID, "BOT_STARTED", "Bot started")
+    await db.log(SYSTEM_USER_ID, "BOT_STARTED", "Bot started")
+    
+    # Получаем всех админов из базы
+    admins = await db.get_users_by_role(UserRole.ADMIN)
+    async def notify_admin(admin):
+        await bot.send_message(
+            admin.telegram_id,
+            "🤖 Бот успешно запущен!\n"
+            f"Время запуска: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        )
+    await asyncio.gather(*(notify_admin(admin) for admin in admins))
     
     # Запускаем поллинг (как в рабочем эхо-боте)
     logger.info("Starting polling...")

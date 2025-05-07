@@ -6,6 +6,7 @@ import uuid
 from db.database import Database
 from services.task_service import TaskService
 from models.user import SYSTEM_USER_ID
+from models.task_types import RabbitMQQueueEnum
 
 # Инициализация сервисов
 task_service = TaskService()
@@ -24,9 +25,9 @@ async def main():
     await db.log(SYSTEM_USER_ID, "WORKER_CHANNEL", "Created channel", print_log=True)
     
     # Объявляем очереди
-    tasks_queue = await channel.declare_queue("tasks")
-    results_queue = await channel.declare_queue("results")
-    await db.log(SYSTEM_USER_ID, "WORKER_QUEUES", "Declared queues: tasks, results", print_log=True)
+    tasks_queue = await channel.declare_queue(RabbitMQQueueEnum.TASK_PROCESSING)
+    results_queue = await channel.declare_queue(RabbitMQQueueEnum.TASK_RESULTS)
+    await db.log(SYSTEM_USER_ID, "WORKER_QUEUES", f"Declared queues: {RabbitMQQueueEnum.TASK_PROCESSING}, {RabbitMQQueueEnum.TASK_RESULTS}", print_log=True)
     
     # Обработка сообщений
     async with tasks_queue.iterator() as queue_iter:
@@ -46,9 +47,9 @@ async def main():
                         body=json.dumps(result).encode(),
                         correlation_id=message.correlation_id
                     ),
-                    routing_key="results"
+                    routing_key=RabbitMQQueueEnum.TASK_RESULTS
                 )
-                await db.log(SYSTEM_USER_ID, "RESULT_SENT", f"Result sent to results queue", print_log=True)
+                await db.log(SYSTEM_USER_ID, "RESULT_SENT", f"Result sent to {RabbitMQQueueEnum.TASK_RESULTS} queue", print_log=True)
 
 if __name__ == "__main__":
     asyncio.run(main()) 

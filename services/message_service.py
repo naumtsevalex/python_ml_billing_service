@@ -6,7 +6,7 @@ import aio_pika
 from aiogram import Bot
 from db.database import Database
 from models.task import Task
-from models.task_types import TaskType
+from models.task_types import TaskTypeEnum, RabbitMQQueueEnum
 from utils.file_utils import FileManager
 import asyncio
 
@@ -46,16 +46,16 @@ class MessageService:
         
         # Определяем тип задачи и создаем её
         if text:
-            task_type = TaskType.TEXT
+            task_type = TaskTypeEnum.TEXT
             payload = text
         elif voice_file_id:
-            task_type = TaskType.VOICE
+            task_type = TaskTypeEnum.VOICE
             payload = voice_file_id
         else:
             raise ValueError("Neither text nor voice_file_id provided")
         
         # Создаем задачу
-        task = await self.db.create_task(task_id, user_id, task_type.value, payload)
+        task = await self.db.create_task(task_id, user_id, task_type, payload)
         
         # Отправляем задачу в очередь
         await self.send_task_to_worker(task)
@@ -63,7 +63,7 @@ class MessageService:
         return {
             "status": "success",
             "task_id": task_id,
-            "type": task_type.value
+            "type": task_type
         }
         
 
@@ -85,8 +85,8 @@ class MessageService:
         }
         
         # Объявляем обе очереди
-        tasks_queue = await channel.declare_queue("tasks")
-        results_queue = await channel.declare_queue("results")
+        tasks_queue = await channel.declare_queue(RabbitMQQueueEnum.TASK_PROCESSING)
+        results_queue = await channel.declare_queue(RabbitMQQueueEnum.TASK_RESULTS)
         
         # Отправляем задачу
         await channel.default_exchange.publish(
@@ -94,7 +94,7 @@ class MessageService:
                 body=json.dumps(task_data).encode(),
                 correlation_id=correlation_id
             ),
-            routing_key="tasks"
+            routing_key=RabbitMQQueueEnum.TASK_PROCESSING
         )
         
         # Ждем ответ в очереди results
@@ -110,14 +110,14 @@ class MessageService:
         """Отправка результата пользователю"""
         if result["status"] == "success":
             # Если есть файл с результатом и это был текст -> аудио (TTS)
-            if "result_file" in result and result["type"] == TaskType.TEXT.value:
+            if "result_file" in result and result["type"] == TaskTypeEnum.TEXT:
                 # Получаем содержимое аудио файла
                 audio_content = await self.file_manager.get_audio(result["result_file"])
                 # Отправляем аудио
                 await self.bot.send_voice(user_id, audio_content)
                 await self.bot.send_message(user_id, result["message"])
             # Если это был голос -> текст (STT)
-            elif result["type"] == TaskType.VOICE.value:
+            elif result["type"] == TaskTypeEnum.VOICE:
                 await self.bot.send_message(user_id, result["message"])
             else:
                 await self.bot.send_message(user_id, result["message"])

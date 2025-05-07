@@ -1,7 +1,7 @@
 from db.database import Database
 from utils.file_utils import FileManager
 from services.ai_service import AIService
-from models.task_types import TaskType
+from models.task_types import TaskTypeEnum
 import os
 
 class TaskService:
@@ -35,9 +35,9 @@ class TaskService:
         await self.db.log(user_id, "TASK_STARTED", f"Processing {task_type} task with task_id: {task_id}", print_log=True)
         
         # Конвертируем тип задачи в enum
-        task_type_enum = TaskType(task_type)
+        task_type_enum = TaskTypeEnum(task_type)
 
-        if task_type_enum == TaskType.VOICE:
+        if task_type_enum == TaskTypeEnum.VOICE:
             # Получаем аудио файл
             await self.db.log(user_id, "TASK_DEBUG", f"Getting audio file for task_id: {task_id}", print_log=True)
             audio_content = await self.file_manager.get_audio(data)
@@ -74,19 +74,20 @@ class TaskService:
                 task_id=task_id,
                 status="completed",
                 result=text,
-                cost=cost
+                cost=cost,
+                type=task_type_enum
             )
             
             await self.db.log(user_id, "TASK_COMPLETED", f"Task {task_type} completed successfully with task_id: {task_id}", print_log=True)
             return {
                 "status": "success",
                 "message": text,
-                "type": task_type_enum.value,
+                "type": task_type_enum,
                 "result_file": result_file,
                 "cost": cost
             }
 
-        elif task_type_enum == TaskType.TEXT:
+        elif task_type_enum == TaskTypeEnum.TEXT:
             # Для текстовых сообщений data содержит сам текст
             text_content = data
             await self.db.log(user_id, "TASK_DEBUG", f"Processing text: {text_content}", print_log=True)
@@ -118,14 +119,15 @@ class TaskService:
                 task_id=task_id,
                 status="completed",
                 result=result_file,
-                cost=cost
+                cost=cost,
+                type=task_type_enum
             )
             
             await self.db.log(user_id, "TASK_COMPLETED", f"Task {task_type} completed successfully with task_id: {task_id}", print_log=True)
             return {
                 "status": "success",
                 "message": "Текст успешно преобразован в речь",
-                "type": task_type_enum.value,
+                "type": task_type_enum,
                 "result_file": result_file,
                 "cost": cost
             }

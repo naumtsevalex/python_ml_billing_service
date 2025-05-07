@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.exc import SQLAlchemyError
 
-from models.user import User, SYSTEM_USER_ID
+from models.user import User, SYSTEM_USER_ID, UserRole
 from models.balance import Balance
 from models.log import Log
 from models.task import Task
@@ -148,5 +148,13 @@ class Database:
                 .where(Task.user_id == user_id)
                 .order_by(Task.created_at.desc())
                 .limit(limit)
+            )
+            return list(result.scalars().all())
+
+    async def get_users_by_role(self, role: UserRole) -> List[User]:
+        """Получить список пользователей по роли"""
+        async with await self.get_session() as session:
+            result = await session.execute(
+                select(User).where(User.role == role)
             )
             return list(result.scalars().all()) 
