@@ -10,7 +10,8 @@ from aiogram.filters import CommandStart, Command
 from aiogram.types import BotCommand, BotCommandScopeDefault
 
 from db.database import Database
-from services.message_service import BotService
+from services.bot_service import BotService
+from services.client_rabbitmq_service import ClientRabbitMQService
 from models.user import SYSTEM_USER_ID, UserRole, User
 from models.balance import Balance
 from middleware import UserRegistrationMiddleware
@@ -28,7 +29,8 @@ logger = logging.getLogger(__name__)
 bot = Bot(token=os.getenv("TELEGRAM_TOKEN"))
 dp = Dispatcher()
 db = Database()
-message_service = BotService(bot)
+client_rabbitmq_service = ClientRabbitMQService()
+bot_service = BotService(bot)
 
 # Создаем роутеры для организации обработчиков
 main_router = Router()
@@ -109,12 +111,12 @@ async def voice_handler(message: types.Message, user: User, balance: Balance) ->
         await message.answer(f"⚠️ Недостаточно средств. Ваш баланс: {balance.balance} кредитов.")
         return
 
-    result = await message_service.process_message(
+    result = await client_rabbitmq_service.process_message(
         user_id=message.from_user.id,
         message_id=message.message_id,
         voice_file_id=message.voice.file_id
     )
-    await message_service.send_result_to_user(message.from_user.id, result)
+    await bot_service.send_result_to_user(message.from_user.id, result)
 
 @message_router.message(F.text)
 async def text_handler(message: types.Message, user: User, balance: Balance) -> None:
@@ -130,14 +132,14 @@ async def text_handler(message: types.Message, user: User, balance: Balance) -> 
         await message.answer(f"⚠️ Недостаточно средств. Ваш баланс: {balance.balance} кредитов.")
         return
     
-    result = await message_service.process_message(
+    result = await client_rabbitmq_service.process_message(
         user_id=message.from_user.id,
         message_id=message.message_id,
         text=message.text
     )
     logger.info(f"[text_handler] Final result from user {message.from_user.id}: {result=}")
 
-    await message_service.send_result_to_user(message.from_user.id, result)
+    await bot_service.send_result_to_user(message.from_user.id, result)
 
 async def set_bot_commands() -> None:
     """Установка команд бота для отображения в интерфейсе Telegram"""
