@@ -23,7 +23,7 @@ class UserRegistrationMiddleware(BaseMiddleware):
         data: Dict[str, Any]
     ) -> Any:
         """Обработка каждого сообщения перед его передачей в обработчик"""
-        # Безопасно проверяем наличие атрибута from_user
+        # Проверяем наличие атрибута from_user
         if not hasattr(event, 'from_user') or event.from_user is None:
             # Для событий без пользователя просто пропускаем middleware
             return await handler(event, data)

@@ -3,6 +3,16 @@ from sqlalchemy.orm import Mapped, mapped_column
 from datetime import datetime
 from .base import Base
 
+from enum import Enum, auto
+
+class TaskStatusEnum(str, Enum):
+    """Перечисление статусов задач"""
+    CREATED = "created"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    ERROR = "error"
+    CANCELLED = "cancelled"
+
 class Task(Base):
     __tablename__ = "tasks"
 

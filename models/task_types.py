@@ -1,4 +1,4 @@
-from enum import Enum
+from enum import Enum, auto
 
 class TaskTypeEnum(str, Enum):
     """Типы задач для обработки"""
@@ -8,5 +8,5 @@ class TaskTypeEnum(str, Enum):
 class RabbitMQQueueEnum(str, Enum):
     """Названия очередей RabbitMQ"""
     TASK_PROCESSING = "tasks"  # Очередь для задач на обработку (бот -> воркер)
-    TASK_RESULTS = "results"  # Очередь для результатов обработки (воркер -> бот) 
+    # Для ответов используются временные очереди, создаваемые клиентом с уникальными именами 
     

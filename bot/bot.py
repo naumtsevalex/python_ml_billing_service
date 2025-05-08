@@ -10,7 +10,7 @@ from aiogram.filters import CommandStart, Command
 from aiogram.types import BotCommand, BotCommandScopeDefault
 
 from db.database import Database
-from services.message_service import MessageService
+from services.message_service import BotService
 from models.user import SYSTEM_USER_ID, UserRole, User
 from models.balance import Balance
 from middleware import UserRegistrationMiddleware
@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 bot = Bot(token=os.getenv("TELEGRAM_TOKEN"))
 dp = Dispatcher()
 db = Database()
-message_service = MessageService(bot)
+message_service = BotService(bot)
 
 # Создаем роутеры для организации обработчиков
 main_router = Router()
@@ -40,6 +40,7 @@ message_router = Router()
 main_router.message.middleware(UserRegistrationMiddleware())
 finance_router.message.middleware(UserRegistrationMiddleware())
 message_router.message.middleware(UserRegistrationMiddleware())
+
 
 @main_router.message(CommandStart())
 async def command_start_handler(message: types.Message) -> Any:
@@ -134,6 +135,8 @@ async def text_handler(message: types.Message, user: User, balance: Balance) -> 
         message_id=message.message_id,
         text=message.text
     )
+    logger.info(f"[text_handler] Final result from user {message.from_user.id}: {result=}")
+
     await message_service.send_result_to_user(message.from_user.id, result)
 
 async def set_bot_commands() -> None:
@@ -167,6 +170,8 @@ async def main() -> None:
     
     # Получаем всех админов из базы
     admins = await db.get_users_by_role(UserRole.ADMIN)
+    logger.info(f"[main] {admins=}")
+
     async def notify_admin(admin):
         await bot.send_message(
             admin.telegram_id,

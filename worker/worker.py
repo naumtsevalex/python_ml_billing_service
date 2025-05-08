@@ -7,6 +7,7 @@ from db.database import Database
 from services.task_service import TaskService
 from models.user import SYSTEM_USER_ID
 from models.task_types import RabbitMQQueueEnum
+from models.task import TaskStatusEnum
 
 # Инициализация сервисов
 task_service = TaskService()
@@ -24,10 +25,9 @@ async def main():
     channel = await connection.channel()
     await db.log(SYSTEM_USER_ID, "WORKER_CHANNEL", "Created channel", print_log=True)
     
-    # Объявляем очереди
+    # Объявляем очередь задач
     tasks_queue = await channel.declare_queue(RabbitMQQueueEnum.TASK_PROCESSING)
-    results_queue = await channel.declare_queue(RabbitMQQueueEnum.TASK_RESULTS)
-    await db.log(SYSTEM_USER_ID, "WORKER_QUEUES", f"Declared queues: {RabbitMQQueueEnum.TASK_PROCESSING}, {RabbitMQQueueEnum.TASK_RESULTS}", print_log=True)
+    await db.log(SYSTEM_USER_ID, "WORKER_QUEUES", f"Declared queue: {RabbitMQQueueEnum.TASK_PROCESSING}", print_log=True)
     
     # Обработка сообщений
     async with tasks_queue.iterator() as queue_iter:
@@ -41,15 +41,21 @@ async def main():
                 # Обрабатываем задачу
                 result = await task_service.process_task(task)
                 
-                # Отправляем результат в очередь results
+                # Проверяем наличие адреса для ответа
+                reply_to = message.reply_to
+                if not reply_to:
+                    await db.log(SYSTEM_USER_ID, "ERROR", "No reply_to in message, cannot send result", print_log=True)
+                    continue
+                
+                # Отправляем результат в указанную очередь ответа
                 await channel.default_exchange.publish(
                     aio_pika.Message(
                         body=json.dumps(result).encode(),
                         correlation_id=message.correlation_id
                     ),
-                    routing_key=RabbitMQQueueEnum.TASK_RESULTS
+                    routing_key=reply_to
                 )
-                await db.log(SYSTEM_USER_ID, "RESULT_SENT", f"Result sent to {RabbitMQQueueEnum.TASK_RESULTS} queue", print_log=True)
+                await db.log(SYSTEM_USER_ID, "RESULT_SENT", f"Result sent to {reply_to} queue", print_log=True)
 
 if __name__ == "__main__":
     asyncio.run(main()) 

@@ -9,7 +9,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from models.user import User, SYSTEM_USER_ID, UserRole
 from models.balance import Balance
 from models.log import Log
-from models.task import Task
+from models.task import Task, TaskStatusEnum
 
 class Database:
     def __init__(self):
@@ -117,7 +117,7 @@ class Database:
                 user_id=user_id,
                 type=task_type,
                 payload=payload,
-                status="created"
+                status=TaskStatusEnum.CREATED
             )
             session.add(task)
             await session.commit()
@@ -126,7 +126,7 @@ class Database:
     async def update_task(
         self, 
         task_id: str, 
-        status: str, 
+        status: TaskStatusEnum, 
         result: Optional[str] = None, 
         cost: Optional[int] = None
     ) -> Optional[Task]:
@@ -139,7 +139,7 @@ class Database:
                 task.status = status
                 task.result = result
                 task.cost = cost
-                if status in ["completed", "error"]:
+                if status in [TaskStatusEnum.COMPLETED, TaskStatusEnum.ERROR]:
                     task.finished_at = datetime.utcnow()
                 await session.commit()
                 return task
