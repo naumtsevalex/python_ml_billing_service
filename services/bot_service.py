@@ -9,7 +9,8 @@ from db.database import Database
 from models.task import Task, TaskStatusEnum
 from models.task_types import TaskTypeEnum, RabbitMQQueueEnum
 from utils.file_utils import FileManager
-from services.client_rabbitmq_service import ClientRabbitMQService, log_debug
+from services.client_rabbitmq_service import ClientRabbitMQService
+from utils.utils import log_debug
 import asyncio
 
 # Настраиваем буферизацию вывода

@@ -8,7 +8,10 @@ TODO:
 
 
 #### Patch 9
-- Разнес на два файла MessageService -> BotService + ClientRabbitMQService(перенес сюда process_message)  
+- Разнес на два файла MessageService -> BotService + ClientRabbitMQService(перенес сюда process_message) 
+> refactor:MessageService -> BotService + ClientRabbitMQService(перенес сюда process_message)
+- Добавил простенький BillingService скрывающий бизнес-логику билинга - сформировал политику билинга(=отдаем всегда результат если баланс >0 [сильно в минус не уйти! TODO: обработать это], иначе предлагаем пополнить счет)
+> feat: add BillingService & dev in bot.py 
 
 ### Path 8
 - Сделал RPC - для каждого юзера одна очередь уникальная => теперь в бот прилетает финальный ответ!

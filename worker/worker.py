@@ -7,7 +7,7 @@ from db.database import Database
 from services.task_service import TaskService
 from models.user import SYSTEM_USER_ID
 from models.task_types import RabbitMQQueueEnum
-from models.task import TaskStatusEnum
+from utils.utils import log_debug
 
 # Инициализация сервисов
 task_service = TaskService()
