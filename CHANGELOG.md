@@ -10,6 +10,9 @@ TODO:
 #### Patch 10 
 - Пофиксил По голосу - возвращает текст распознаный 
 > feat: (user) voice -> text
+- Добавил README.md и DETAILS.md - для более детального погружения
+> doc: patch README.md and add DETAILS.md
+
 
 #### Patch 9
 - Разнес на два файла MessageService -> BotService + ClientRabbitMQService(перенес сюда process_message) 
