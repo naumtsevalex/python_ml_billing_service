@@ -79,12 +79,12 @@ class ClientRabbitMQService:
                 # Игнорируем чужие сообщения
                 await message.ack()
 
-    async def process_message(self, user_id: int, message_id: int, text: str | None = None, voice_file_id: str | None = None) -> dict:
+    async def process_message(self, task_id: str, user_id: int, message_id: int, text: str | None = None, voice_file_id: str | None = None) -> dict:
         """Обработка входящего сообщения"""
         # Пользователь уже создан через middleware, нет необходимости проверять
         
         # Генерируем ID задачи
-        task_id = f"{user_id}_{message_id}"
+        # task_id = f"{user_id}_{message_id}"
         
         # Определяем тип задачи и создаем её
         if text:

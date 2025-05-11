@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, Asyn
 from sqlalchemy.exc import SQLAlchemyError
 
 from models.user import User, SYSTEM_USER_ID, UserRole
-from models.balance import Balance
+from models.balance import Balance, START_BALANCE
 from models.log import Log
 from models.task import Task, TaskStatusEnum
 
@@ -53,7 +53,7 @@ class Database:
             await session.flush()
             
             # Создаем начальный баланс
-            balance = Balance(user_id=telegram_id, balance=10)
+            balance = Balance(user_id=telegram_id, balance=START_BALANCE)
             session.add(balance)
             
             await session.commit()
@@ -109,7 +109,7 @@ class Database:
             if print_log:
                 print(f"[LOG] {action}: {details}", flush=True)
 
-    async def create_task(self, task_id: str, user_id: int, task_type: str, payload: str) -> Task:
+    async def create_task(self, task_id: str, user_id: int, task_type: str, payload: str, cost: int = 0) -> Task:
         """Создать новую задачу"""
         async with await self.get_session() as session:
             task = Task(
@@ -117,7 +117,8 @@ class Database:
                 user_id=user_id,
                 type=task_type,
                 payload=payload,
-                status=TaskStatusEnum.CREATED
+                status=TaskStatusEnum.CREATED,
+                cost=cost
             )
             session.add(task)
             await session.commit()

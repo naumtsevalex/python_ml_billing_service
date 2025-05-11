@@ -77,4 +77,4 @@ class BotService:
             await self.bot.send_message(user_id, text_result)
         
         # Отправляем информацию о стоимости
-        await self.bot.send_message(user_id, f"💰 Стоимость: {cost} кредитов")
+        # await self.bot.send_message(user_id, f"💰 Стоимость: {cost} кредитов")

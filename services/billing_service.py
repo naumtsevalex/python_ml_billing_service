@@ -3,6 +3,7 @@ from datetime import datetime
 from db.database import Database
 from models.user import User
 from models.balance import Balance
+from models.task import Task
 
 class BillingService:
     """Простой сервис для работы с балансом пользователей в боте"""
@@ -50,7 +51,7 @@ class BillingService:
         last_updated = balance.updated_at.strftime("%Y-%m-%d %H:%M:%S")
         return f"💰 Ваш текущий баланс: {balance.balance} кредитов\n📊 Последнее обновление: {last_updated}"
     
-    async def _update_balance(self, user_id: int, amount: float, reason: str = None) -> tuple[bool, str]:
+    async def _update_balance(self, user_id: int, amount: float, reason: str = None) -> Balance:
         """
         Обновляет баланс пользователя
         
@@ -80,12 +81,9 @@ class BillingService:
         # Получаем обновленный баланс
         new_balance = await self.db.get_balance_object(user_id)
         
-        if amount > 0:
-            return True, f"✅ Ваш баланс пополнен на {amount} кредитов. Текущий баланс: {new_balance.balance} кредитов."
-        else:
-            return True, f"💸 С вашего баланса списано {-amount} кредитов. Текущий баланс: {new_balance.balance} кредитов."
+        return new_balance
                 
-    async def charge_for_task(self, task_id: str, reason: str = None) -> tuple[bool, str]:
+    async def charge_for_task(self, task_id: str, reason: str = None) -> tuple[Task, Balance]:
         """
         Списывает средства с баланса пользователя за выполнение задачи
         
@@ -110,4 +108,13 @@ class BillingService:
             reason = f"Оплата задачи {task_id}"
         
         # Отрицательное значение для списания
-        return await self._update_balance(user_id, -cost, reason)
+        return task, await self._update_balance(user_id, -cost, reason)
+    
+    def str_report_balance(self, balance: Balance) -> tuple[bool, str]:
+        """
+        Отправляет сообщение о балансе пользователю
+        """
+        if balance.balance <= 0:
+            return False, f"⚠️ Недостаточно средств. Ваш баланс: {balance.balance} кредитов.\nДля пополнения баланса используй команду /balance"
+        else:
+            return True, f"💰 Ваш текущий баланс: {balance.balance} кредитов."

@@ -36,10 +36,14 @@ class AIService:
         """Расчет стоимости операции"""
         if operation == "tts":
             # Стоимость за символ текста
-            return len(content) * 0.1  # 0.1 кредита за символ
+            # return len(content) * 0.1  # 0.1 кредита за символ
+            return 5 # 1 токен
         else:  # stt
             # Стоимость за секунду аудио (примерно)
             # Предполагаем, что аудио в формате 16kHz, 16-bit mono
             # Размер в байтах / (16000 * 2) = количество секунд
-            audio_length = len(content) / (16000 * 2)
-            return int(audio_length * 0.5)  # 0.5 кредита за секунду 
+            # audio_length = len(content) / (16000 * 2)
+            # return int(audio_length * 0.5)  # 0.5 кредита за секунду 
+            
+            return 4  # токенов 
+        

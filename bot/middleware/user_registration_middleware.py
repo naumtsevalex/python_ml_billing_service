@@ -12,9 +12,9 @@ logger = logging.getLogger(__name__)
 class UserRegistrationMiddleware(BaseMiddleware):
     """Middleware для проверки и создания пользователя при обработке сообщений"""
     
-    def __init__(self):
+    def __init__(self, db: Database):
         """Инициализация middleware"""
-        self.db = Database()
+        self.db = db
     
     async def __call__(
         self,
