@@ -4,6 +4,8 @@ from aiogram import Router, types
 from aiogram.filters import Command
 from models.user import User
 from models.task import Task
+from models.balance import Balance
+
 from services.joke_service import JokeService
 from services.ai_service import AIService
 from services.task_service import TaskService
@@ -45,10 +47,15 @@ def setup_joke_router(
 # ================================
 
 @joke_router.message(Command("joke"))
-async def joke_handler(message: types.Message, user: User):
+async def joke_handler(message: types.Message, user: User, balance: Balance):
     """Обработчик команды /joke"""
     logger.info(f"Joke command from user {user.telegram_id}")
     
+    ok, str_report = billing_service.str_report_balance(balance)
+    if not ok:
+        await message.answer(str_report)
+        return
+
     joke = await joke_service.get_random_joke()
     if not joke:
         await message.answer("Извините, у меня закончились анекдоты 😢")
@@ -60,7 +67,7 @@ async def joke_handler(message: types.Message, user: User):
     # достать текст любого анекдота будет стоит 1 токен
     task = await db.create_task(task_id=task_id, user_id=user.telegram_id, task_type="just_text_form_db", payload=joke.text, 
                                 cost=1) # hardcoded bad(
-    task, (ok, str_report) = await billing_service.charge_for_task(task_id=task_id)
+    task, new_balance = await billing_service.charge_for_task(task_id=task_id)
 
     res = f"💰 Стоимость анекдота: {task.cost} токен\n{joke.text}"
     await message.answer(res)
@@ -68,10 +75,16 @@ async def joke_handler(message: types.Message, user: User):
 @joke_router.message(Command("joke_voice"))
 async def joke_voice_handler(
     message: types.Message, 
-    user: User
+    user: User,
+    balance: Balance
 ):
     """Обработчик команды /joke_voice"""
     logger.info(f"Joke voice command from user {user.telegram_id}")
+    ok, str_report = billing_service.str_report_balance(balance)
+    
+    if not ok:
+        await message.answer(str_report)
+        return
     
     joke = await joke_service.get_random_joke()
     if not joke:
@@ -92,7 +105,7 @@ async def joke_voice_handler(
     logger.info(f"[text_handler] Final result from user {user.telegram_id}: {result=}")
     await bot_service.send_result_to_user(user.telegram_id, result)
     
-    task, (ok, str_report) = await billing_service.charge_for_task(task_id=task_id)
+    task, new_balance = await billing_service.charge_for_task(task_id=task_id)
 
     res = f"💰 Стоимость анекдота: {task.cost} токенов\n<tg-spoiler>{joke.text}</tg-spoiler>"
     await message.answer(res, parse_mode="HTML") 
