@@ -1,117 +1,208 @@
 import os
-import json
+import logging
 import asyncio
-import aio_pika
-from aiogram import Bot, Dispatcher, types
-from aiogram.filters.command import Command
+import sys
+from typing import Any, Optional
+from datetime import datetime
+
+from aiogram import Bot, Dispatcher, types, F, Router
+from aiogram.filters import CommandStart, Command
+from aiogram.types import BotCommand, BotCommandScopeDefault
+
 from db.database import Database
+from services.bot_service import BotService
+from services.client_rabbitmq_service import ClientRabbitMQService
+from services.billing_service import BillingService
 
-# Инициализация бота
-bot = Bot(token=os.environ["TELEGRAM_TOKEN"])
+from models.user import SYSTEM_USER_ID, UserRole, User
+from models.balance import Balance
+
+from middleware import UserRegistrationMiddleware
+
+# Настройка логирования
+logging.basicConfig(
+    level=logging.INFO,
+    format='[%(asctime)s] %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+    stream=sys.stdout
+)
+logger = logging.getLogger(__name__)
+
+# Инициализация компонентов
+bot = Bot(token=os.getenv("TELEGRAM_TOKEN"))
 dp = Dispatcher()
+db = Database()
+client_rabbitmq_service = ClientRabbitMQService()
+bot_service = BotService(bot)
+billing_service = BillingService()
 
-async def register_user(message: types.Message):
-    """Регистрация нового пользователя"""
-    db = Database()
-    user_id = message.from_user.id
-    username = message.from_user.username or str(user_id)
-    
-    # Проверяем, существует ли пользователь
-    user = await db.get_user(user_id)
-    if not user:
-        # Создаем нового пользователя
-        user = await db.create_user(user_id, username)
-        await db.log(user_id, "USER_REGISTERED", f"New user registered: {username}", print_log=True)
-        await message.answer("Добро пожаловать! Вы успешно зарегистрированы.")
-    else:
-        await db.log(user_id, "USER_LOGIN", f"User logged in: {username}", print_log=True)
+# Создаем роутеры для организации обработчиков
+main_router = Router()
+finance_router = Router()
+message_router = Router()
 
-@dp.message(Command("start"))
-async def cmd_start(message: types.Message):
-    """Обработка команды /start"""
-    await register_user(message)
+# Регистрируем middleware
+# dp.update.middleware(UserRegistrationMiddleware())
+main_router.message.middleware(UserRegistrationMiddleware())
+finance_router.message.middleware(UserRegistrationMiddleware())
+message_router.message.middleware(UserRegistrationMiddleware())
+
+
+@main_router.message(CommandStart())
+async def command_start_handler(message: types.Message) -> Any:
+    """Обработчик команды /start"""
+    logger.info(f"User {message.from_user.id} started bot")
     await message.answer(
-        "Привет! Я бот для обработки текста и аудио. "
-        "Отправьте мне текст или голосовое сообщение."
+        f"👋 Привет, {message.from_user.full_name}!\n"
+        f"Я бот для обработки сообщений.\n"
+        f"Твой ID: <code>{message.from_user.id}</code>\n\n"
+        f"Используй /help для получения списка доступных команд."
     )
 
-@dp.message()
-async def handle_message(message: types.Message):
-    """Обработка входящих сообщений"""
-    db = Database()
-    user_id = message.from_user.id
+@main_router.message(Command("help"))
+async def help_command(message: types.Message) -> None:
+    """Обработчик команды /help
     
-    # Проверяем регистрацию
-    user = await db.get_user(user_id)
-    if not user:
-        await register_user(message)
+    Отображает список доступных команд и их описание
+    """
+    logger.info(f"Help command from user {message.from_user.id}")
     
-    # Получаем баланс
-    balance = await db.get_balance(user_id)
-    if balance <= 0:
-        await message.answer("У вас недостаточно средств. Пополните баланс.")
+    help_text = (
+        "📋 <b>Доступные команды:</b>\n\n"
+        "/start - Начать взаимодействие с ботом\n"
+        "/help - Показать этот список команд\n"
+        "/balance - Проверить ваш текущий баланс\n\n"
+        "<b>Возможности бота:</b>\n"
+        "• Отправьте текстовое сообщение для преобразования его в аудио (TTS)\n"
+        "• Отправьте голосовое сообщение для преобразования его в текст (STT)\n"
+        "• Напишите 'баланс' для проверки вашего счета"
+    )
+    
+    await message.answer(help_text, parse_mode="HTML")
+
+@finance_router.message(Command("balance"))
+async def balance_command(message: types.Message, user: User, balance: Balance) -> None:
+    """Обработчик команды /balance
+    
+    Отображает текущий баланс пользователя и время последнего обновления
+    """
+    logger.info(f"Balance command from user {message.from_user.id}")
+    
+    # Проверка роли пользователя
+    if user.role == UserRole.BANNED:
+        await message.answer("Извините, ваш аккаунт заблокирован.")
+        return
+    
+    # Форматируем и отправляем информацию о балансе
+    last_updated = balance.updated_at.strftime("%Y-%m-%d %H:%M:%S")
+    await message.answer(
+        f"💰 Ваш текущий баланс: {balance.balance} кредитов\n"
+        f"📊 Последнее обновление: {last_updated}"
+    )
+
+@message_router.message(F.voice)
+async def voice_handler(message: types.Message, user: User, balance: Balance) -> None:
+    """Обработчик голосовых сообщений"""
+    logger.info(f"Processing voice message from user {message.from_user.id}")
+    
+    # Проверка роли пользователя
+    if user.role == UserRole.BANNED:
+        await message.answer("Извините, ваш аккаунт заблокирован.")
+        return
+    
+    # Проверка баланса для голосовых сообщений
+    if balance.balance <= 0:  # Предполагаем минимальный баланс для Voice->Text
+        await message.answer(f"⚠️ Недостаточно средств. Ваш баланс: {balance.balance} кредитов.")
         return
 
-    try:
-        # Подключаемся к RabbitMQ
-        await db.log(user_id, "RABBITMQ_CONNECTING", f"Connecting to RabbitMQ at {os.environ['RABBITMQ_URL']}", print_log=True)
-        connection = await aio_pika.connect_robust(os.environ["RABBITMQ_URL"])
-        await db.log(user_id, "RABBITMQ_CONNECTED", "Successfully connected to RabbitMQ", print_log=True)
-        
-        # Создаем канал
-        channel = await connection.channel()
-        await db.log(user_id, "RABBITMQ_CHANNEL", "Created RabbitMQ channel", print_log=True)
-        
-        # Формируем задачу
-        task = {
-            "user_id": user_id,
-            "type": "text",  # или "voice" для голосовых сообщений
-            "data": message.text
-        }
-        
-        # Создаем очередь для ответа
-        reply_queue = await channel.declare_queue(exclusive=True)
-        await db.log(user_id, "RABBITMQ_REPLY_QUEUE", f"Created reply queue: {reply_queue.name}", print_log=True)
-        
-        # Отправляем задачу
-        await channel.default_exchange.publish(
-            aio_pika.Message(
-                body=json.dumps(task).encode(),
-                reply_to=reply_queue.name
-            ),
-            routing_key="tasks"
-        )
-        
-        await db.log(user_id, "TASK_SENT", f"Task sent to worker: {task['type']}", print_log=True)
-        
-        # Ждем ответ
-        async with reply_queue.iterator() as queue_iter:
-            await db.log(user_id, "WAITING_REPLY", "Waiting for worker reply", print_log=True)
-            async for message in queue_iter:
-                async with message.process():
-                    result = json.loads(message.body.decode())
-                    if result["status"] == "success":
-                        await db.log(user_id, "TASK_RESULT", f"Task completed: {result['message']}", print_log=True)
-                        await bot.send_message(user_id, result["message"])
-                    else:
-                        await db.log(user_id, "TASK_ERROR", f"Task failed: {result.get('error', 'Unknown error')}", print_log=True)
-                        await bot.send_message(user_id, "Произошла ошибка при обработке задачи.")
-                    break
-    
-    except Exception as e:
-        await db.log(user_id, "BOT_ERROR", f"Error processing message: {str(e)}", print_log=True)
-        await message.answer("Произошла ошибка при обработке сообщения.")
-    
-    finally:
-        if 'connection' in locals():
-            await connection.close()
-            await db.log(user_id, "RABBITMQ_DISCONNECTED", "Disconnected from RabbitMQ", print_log=True)
+    result = await client_rabbitmq_service.process_message(
+        user_id=message.from_user.id,
+        message_id=message.message_id,
+        voice_file_id=message.voice.file_id
+    )
+    await bot_service.send_result_to_user(message.from_user.id, result)
+    task_id = result["task_id"]
+    ok, str_report = await billing_service.charge_for_task(task_id=task_id)
+    await message.answer(str_report)
 
-async def main():
-    """Запуск бота"""
-    db = Database()
-    await db.log(None, "BOT_STARTED", "Bot started and ready to process messages", print_log=True)
+
+@message_router.message(F.text)
+async def text_handler(message: types.Message, user: User, balance: Balance) -> None:
+    """Обработчик текстовых сообщений"""
+    logger.info(f"Processing text message from user {message.from_user.id}: {message.text}")
+    
+    # Проверка роли пользователя
+    if user.role == UserRole.BANNED:
+        await message.answer("Извините, ваш аккаунт заблокирован.")
+        return
+    
+    if balance.balance <= 0:  # Предполагаем минимальный баланс для Text->Voice
+        await message.answer(f"⚠️ Недостаточно средств. Ваш баланс: {balance.balance} кредитов.")
+        return
+    
+    result = await client_rabbitmq_service.process_message(
+        user_id=message.from_user.id,
+        message_id=message.message_id,
+        text=message.text
+    )
+    
+
+    logger.info(f"[text_handler] Final result from user {message.from_user.id}: {result=}")
+    await bot_service.send_result_to_user(message.from_user.id, result)
+    
+    task_id = result["task_id"]
+    ok, str_report = await billing_service.charge_for_task(task_id=task_id)
+    # if not ok:
+        # await message.answer(message)
+    await message.answer(str_report)
+
+async def set_bot_commands() -> None:
+    """Установка команд бота для отображения в интерфейсе Telegram"""
+    commands = [
+        BotCommand(command="start", description="Начать взаимодействие с ботом"),
+        BotCommand(command="help", description="Показать список доступных команд"),
+        BotCommand(command="balance", description="Проверить ваш текущий баланс")
+    ]
+    
+    await bot.set_my_commands(commands, scope=BotCommandScopeDefault())
+    logger.info("Bot commands have been set successfully")
+
+async def main() -> None:
+    """Точка входа в приложение"""
+    logger.info("Starting bot...")
+    
+    # Убеждаемся, что системный пользователь существует
+    await db.ensure_system_user_exists()
+    
+    # Регистрируем старт в базе
+    await db.log(SYSTEM_USER_ID, "BOT_STARTED", "Bot started")
+    
+    # Регистрируем роутеры
+    dp.include_router(main_router)
+    dp.include_router(finance_router)
+    dp.include_router(message_router)
+    
+    # Установка команд бота (будут видны в интерфейсе Telegram)
+    await set_bot_commands()
+    
+    # Получаем всех админов из базы
+    admins = await db.get_users_by_role(UserRole.ADMIN)
+    logger.info(f"[main] {admins=}")
+
+    async def notify_admin(admin):
+        await bot.send_message(
+            admin.telegram_id,
+            "🤖 Бот успешно запущен!\n"
+            f"Время запуска: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        )
+    await asyncio.gather(*(notify_admin(admin) for admin in admins))
+    
+    # Запускаем поллинг (как в рабочем эхо-боте)
+    logger.info("Starting polling...")
     await dp.start_polling(bot)
+    
 
 if __name__ == "__main__":
-    asyncio.run(main()) 
+    # Запускаем бота
+    asyncio.run(main())
+    
