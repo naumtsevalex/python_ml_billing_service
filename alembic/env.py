@@ -23,7 +23,7 @@ if config.config_file_name is not None:
 # target_metadata = None
 
 from models.base import Base # ME
-from models import user, balance, transaction, task, log
+from models import user, balance, transaction, task, log, joke
 target_metadata = Base.metadata
 
 # other values from the config, defined by the needs of env.py,

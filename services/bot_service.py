@@ -68,7 +68,7 @@ class BotService:
             # Отправляем аудио и сообщение
             log_debug(f"Отправка голосового сообщения пользователю {user_id}")
             await self.bot.send_voice(user_id, voice_file)
-            await self.bot.send_message(user_id, "Текст успешно преобразован в речь")
+            # await self.bot.send_message(user_id, "Текст успешно преобразован в речь")
             
         elif task_type == TaskTypeEnum.VOICE:
             # Это был STT запрос (преобразование голоса в текст)
@@ -77,4 +77,4 @@ class BotService:
             await self.bot.send_message(user_id, text_result)
         
         # Отправляем информацию о стоимости
-        await self.bot.send_message(user_id, f"💰 Стоимость: {cost} кредитов")
+        # await self.bot.send_message(user_id, f"💰 Стоимость: {cost} кредитов")

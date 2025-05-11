@@ -109,7 +109,7 @@ class Database:
             if print_log:
                 print(f"[LOG] {action}: {details}", flush=True)
 
-    async def create_task(self, task_id: str, user_id: int, task_type: str, payload: str) -> Task:
+    async def create_task(self, task_id: str, user_id: int, task_type: str, payload: str, cost: int = 0) -> Task:
         """Создать новую задачу"""
         async with await self.get_session() as session:
             task = Task(
@@ -117,7 +117,8 @@ class Database:
                 user_id=user_id,
                 type=task_type,
                 payload=payload,
-                status=TaskStatusEnum.CREATED
+                status=TaskStatusEnum.CREATED,
+                cost=cost
             )
             session.add(task)
             await session.commit()
