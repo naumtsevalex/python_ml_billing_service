@@ -4,6 +4,8 @@ from services.ai_service import AIService
 from models.task_types import TaskTypeEnum
 from models.task import TaskStatusEnum
 import os
+import aiohttp
+from utils.utils import log_debug
 
 class TaskService:
     
@@ -11,6 +13,26 @@ class TaskService:
         self.db = Database()
         self.file_manager = FileManager()
         self.ai_service = AIService()
+        self.telegram_token = os.environ.get("TELEGRAM_TOKEN")
+
+    async def _download_telegram_file(self, file_id: str) -> bytes:
+        """Скачивает файл из Telegram по file_id"""
+        # Получаем информацию о файле
+        async with aiohttp.ClientSession() as session:
+            # Получаем file_path
+            file_info_url = f"https://api.telegram.org/bot{self.telegram_token}/getFile"
+            async with session.get(file_info_url, params={"file_id": file_id}) as response:
+                file_info = await response.json()
+                if not file_info.get("ok"):
+                    raise ValueError(f"Failed to get file info: {file_info}")
+                file_path = file_info["result"]["file_path"]
+            
+            # Скачиваем файл
+            file_url = f"https://api.telegram.org/file/bot{self.telegram_token}/{file_path}"
+            async with session.get(file_url) as response:
+                if response.status != 200:
+                    raise ValueError(f"Failed to download file: {response.status}")
+                return await response.read()
 
     async def process_task(self, task: dict) -> dict:
         """Обработка задачи"""
@@ -39,10 +61,24 @@ class TaskService:
         task_type_enum = TaskTypeEnum(task_type)
 
         if task_type_enum == TaskTypeEnum.VOICE:
-            # Получаем аудио файл
-            await self.db.log(user_id, "TASK_DEBUG", f"Getting audio file for task_id: {task_id}", print_log=True)
-            audio_content = await self.file_manager.get_audio(data)
-            await self.db.log(user_id, "TASK_DEBUG", f"Got audio file for task_id: {task_id}", print_log=True)
+            # Скачиваем файл из Telegram
+            await self.db.log(user_id, "TASK_DEBUG", f"Downloading file from Telegram for task_id: {task_id}", print_log=True)
+            try:
+                # Получаем file_id из данных задачи
+                file_id = data
+                await self.db.log(user_id, "TASK_DEBUG", f"Got file_id: {file_id} for task_id: {task_id}", print_log=True)
+                
+                # Скачиваем файл
+                audio_content = await self._download_telegram_file(file_id)
+                await self.db.log(user_id, "TASK_DEBUG", f"File downloaded successfully for task_id: {task_id}", print_log=True)
+            except Exception as e:
+                await self.db.log(user_id, "TASK_ERROR", f"Failed to download file: {str(e)}", print_log=True)
+                raise ValueError(f"Failed to download voice file: {str(e)}")
+            
+            # Сохраняем файл локально
+            await self.db.log(user_id, "TASK_DEBUG", f"Saving audio file for task_id: {task_id}", print_log=True)
+            audio_path = await self.file_manager.save_audio(audio_content, user_id, task_id, direction="in")
+            await self.db.log(user_id, "TASK_DEBUG", f"Audio file saved at {audio_path} for task_id: {task_id}", print_log=True)
             
             # Рассчитываем стоимость
             await self.db.log(user_id, "TASK_DEBUG", f"Calculating cost for STT task_id: {task_id}", print_log=True)
@@ -57,11 +93,6 @@ class TaskService:
             await self.db.log(user_id, "TASK_DEBUG", f"Saving text result for task_id: {task_id}", print_log=True)
             result_file = await self.file_manager.save_text(text, user_id, f"result_{task_id}")
             await self.db.log(user_id, "TASK_DEBUG", f"Saved text result for task_id: {task_id}", print_log=True)
-            
-            # # Списываем кредиты и обновляем задачу
-            # await self.db.log(user_id, "TASK_DEBUG", f"Updating balance for task_id: {task_id}, deducting {cost}", print_log=True)
-            # await self.db.update_balance(user_id, -cost)
-            # await self.db.log(user_id, "BALANCE_UPDATED", f"Spent {cost} credits for STT", print_log=True)
             
             await self.db.log(user_id, "TASK_DEBUG", f"Updating task status to completed for task_id: {task_id}", print_log=True)
             await self.db.update_task(

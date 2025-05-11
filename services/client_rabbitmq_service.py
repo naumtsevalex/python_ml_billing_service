@@ -9,12 +9,15 @@ from db.database import Database
 from models.task import TaskStatusEnum
 from models.task_types import TaskTypeEnum, RabbitMQQueueEnum
 from utils.file_utils import FileManager
-from utils.utils import log_debug
 import asyncio
 
 # Настраиваем буферизацию вывода
 sys.stdout.reconfigure(line_buffering=True)
 
+def log_debug(message: str):
+    """Функция для отладочного логирования"""
+    print(f"[DEBUG] {message}", flush=True)
+    sys.stdout.flush()
 
 class ClientRabbitMQService:
     """Сервис для работы с RabbitMQ и выполнения RPC запросов"""
