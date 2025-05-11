@@ -5,11 +5,11 @@
 ```mermaid
 graph TD
     User[Пользователь] -->|Сообщения| Bot[Telegram Bot]
-    Bot -->|Задачи| RabbitMQ[RabbitMQ]
-    RabbitMQ -->|Обработка| Worker[Worker]
+    Bot -->|Задачи + task_id| RabbitMQ[RabbitMQ]
+    RabbitMQ -->|Обработка + task_id| Worker[Worker]
     Worker -->|API| Yandex[Yandex SpeechKit]
-    Bot -->|Данные| DB[(PostgreSQL)]
-    Worker -->|Данные| DB
+    Bot -->|Данные + task_id| DB[(PostgreSQL)]
+    Worker -->|Данные + task_id| DB
     Worker -->|Метрики| Prometheus[Prometheus]
     Prometheus -->|Визуализация| Grafana[Grafana]
 ```
@@ -283,13 +283,18 @@ sequenceDiagram
     User->>Bot: Команда /joke
     Bot->>DB: Проверяет баланс пользователя
     alt Баланс достаточный
-        Bot->>RabbitMQ: Создает задачу (correlation_id, reply_to)
+        Bot->>DB: Создает запись задачи (task_id)
+        DB-->>Bot: Подтверждает создание
+        Bot->>RabbitMQ: Создает задачу (task_id, correlation_id, reply_to)
         RabbitMQ->>Worker: Передает задачу
+        Worker->>DB: Получает задачу по task_id
         Worker->>DB: Получает случайный анекдот
+        Worker->>DB: Обновляет статус задачи по task_id
         Worker->>DB: Списывает кредиты
-        Worker->>DB: Записывает транзакцию
-        Worker-->>RabbitMQ: Отправляет результат в reply_to
+        Worker->>DB: Записывает транзакцию (task_id)
+        Worker-->>RabbitMQ: Отправляет результат в reply_to (task_id)
         RabbitMQ-->>Bot: Передает результат
+        Bot->>DB: Обновляет статус задачи по task_id
         Bot-->>User: Отправляет анекдот
     else Недостаточно кредитов
         Bot-->>User: Сообщение о недостатке кредитов
@@ -309,15 +314,20 @@ sequenceDiagram
     User->>Bot: Команда /joke_voice
     Bot->>DB: Проверяет баланс пользователя
     alt Баланс достаточный
-        Bot->>RabbitMQ: Создает задачу (correlation_id, reply_to)
+        Bot->>DB: Создает запись задачи (task_id)
+        DB-->>Bot: Подтверждает создание
+        Bot->>RabbitMQ: Создает задачу (task_id, correlation_id, reply_to)
         RabbitMQ->>Worker: Передает задачу
+        Worker->>DB: Получает задачу по task_id
         Worker->>DB: Получает случайный анекдот
         Worker->>TTS: Конвертирует текст в речь
         TTS-->>Worker: Возвращает аудио
+        Worker->>DB: Обновляет статус задачи по task_id
         Worker->>DB: Списывает кредиты
-        Worker->>DB: Записывает транзакцию
-        Worker-->>RabbitMQ: Отправляет результат в reply_to
+        Worker->>DB: Записывает транзакцию (task_id)
+        Worker-->>RabbitMQ: Отправляет результат в reply_to (task_id)
         RabbitMQ-->>Bot: Передает результат
+        Bot->>DB: Обновляет статус задачи по task_id
         Bot-->>User: Отправляет голосовое сообщение
     else Недостаточно кредитов
         Bot-->>User: Сообщение о недостатке кредитов
@@ -353,21 +363,29 @@ sequenceDiagram
     User->>Bot: Команда /joke_voice
     Bot->>DB: Проверяет баланс пользователя
     alt Баланс достаточный
-        Bot->>RabbitMQ: Создает задачу
+        Bot->>DB: Создает запись задачи (task_id)
+        DB-->>Bot: Подтверждает создание
+        Bot->>RabbitMQ: Создает задачу (task_id, correlation_id, reply_to)
         RabbitMQ->>Worker: Передает задачу
+        Worker->>DB: Получает задачу по task_id
         Worker->>DB: Получает анекдот
         Worker->>TTS: Конвертирует текст в речь
         alt Ошибка TTS
             TTS-->>Worker: Возвращает ошибку
+            Worker->>DB: Обновляет статус задачи по task_id (ERROR)
             Worker->>DB: Отменяет списание кредитов
-            Worker-->>RabbitMQ: Отправляет ошибку в reply_to
+            Worker-->>RabbitMQ: Отправляет ошибку в reply_to (task_id)
             RabbitMQ-->>Bot: Передает ошибку
+            Bot->>DB: Обновляет статус задачи по task_id (FAILED)
             Bot-->>User: Сообщение об ошибке
         else Успех
             TTS-->>Worker: Возвращает аудио
+            Worker->>DB: Обновляет статус задачи по task_id (SUCCESS)
             Worker->>DB: Списывает кредиты
-            Worker-->>RabbitMQ: Отправляет результат
+            Worker->>DB: Записывает транзакцию (task_id)
+            Worker-->>RabbitMQ: Отправляет результат в reply_to (task_id)
             RabbitMQ-->>Bot: Передает результат
+            Bot->>DB: Обновляет статус задачи по task_id (COMPLETED)
             Bot-->>User: Отправляет голосовое сообщение
         end
     else Недостаточно кредитов
